@@ -2,9 +2,9 @@ package dev.conn.overlay;
 
 import androidx.appcompat.app.AppCompatActivity;
 
+import android.graphics.Color;
 import android.os.Bundle;
 import android.util.Log;
-import android.view.GestureDetector;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
@@ -14,9 +14,10 @@ import android.view.WindowManager;
 import java.lang.reflect.Field;
 
 public class MainActivity extends AppCompatActivity {
-    private int mActivityHeight = 400;
+    private static final String TAG = "Overlay";
 
-    private int mTouchStartPos;
+    private int mLastTouchPos;
+    private View mContents;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -25,16 +26,20 @@ public class MainActivity extends AppCompatActivity {
 
         WindowManager.LayoutParams params = getWindow().getAttributes();
 
+        // Set up the Activity to be at the bottom, full width.
         params.width = WindowManager.LayoutParams.MATCH_PARENT;
-        // params.height = mActivityHeight;
         params.height = WindowManager.LayoutParams.WRAP_CONTENT;
         params.gravity = Gravity.BOTTOM;
 
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        // "transparent" is a transparent view above the handle that expands when the Activity
+        // becomes full screen.
         View transparent = findViewById(R.id.transparent);
-        View hello = findViewById(R.id.hello);
+
+        // This will be the content of the overlay Activity (everything except the handle).
+        mContents = findViewById(R.id.hello);
 
         findViewById(R.id.handle).setOnTouchListener((view, motionEvent) -> {
             view.performClick();
@@ -42,66 +47,65 @@ public class MainActivity extends AppCompatActivity {
             View decorView = getWindow().getDecorView();
             WindowManager.LayoutParams lp = (WindowManager.LayoutParams) decorView.getLayoutParams();
 
-            boolean consumed = false;
             if (motionEvent.getAction() == MotionEvent.ACTION_DOWN) {
-                lp.height = WindowManager.LayoutParams.MATCH_PARENT;
+                // When the user starts to drag the handle:
 
-                mTouchStartPos = (int) motionEvent.getRawY();
-                Log.d("Peter", "Start pos: " + mTouchStartPos);
+                // - Make the Activity full height:
+                lp.height = WindowManager.LayoutParams.MATCH_PARENT;
+                getWindowManager().updateViewLayout(decorView, lp);
+
+                // - Make "transparent" take up space:
                 transparent.setVisibility(View.INVISIBLE);
 
-                // Fix the height of the "hello contents".
-                ViewGroup.LayoutParams viewParams = hello.getLayoutParams();
-                viewParams.height = hello.getMeasuredHeight();
-                hello.setLayoutParams(viewParams);
+                // - Remember where the click was:
+                mLastTouchPos = (int) motionEvent.getRawY();
 
-                consumed = true;
-                Log.d("Peter", "Match");
+                // If we don't return true on an ACTION_DOWN event we'll don't get an ACTION_UP.
+                return true;
             } else if (motionEvent.getAction() == MotionEvent.ACTION_UP) {
+                // When the user has finished dragging the handle:
+
+                // - Make the Activity WRAP_CONTENTS:
+                params.height = WindowManager.LayoutParams.WRAP_CONTENT;
+                getWindowManager().updateViewLayout(decorView, lp);
+
+                // - Make "transparent" go away:
                 transparent.setVisibility(View.GONE);
 
+                // - Update the size of contents:
+                updateContentsSize((int) motionEvent.getRawY());
 
-                int touchEndPos = (int) motionEvent.getRawY();
-                Log.d("Peter", "End pos: " + touchEndPos);
-                int diff = touchEndPos - mTouchStartPos;
-
-                Log.d("Peter", "" + diff);
-
-//                mActivityHeight -= diff;
-
-                ViewGroup.LayoutParams viewParams = hello.getLayoutParams();
-                viewParams.height -= diff;
-                hello.setLayoutParams(viewParams);
-
-//                params.height = mActivityHeight;
-                params.height = WindowManager.LayoutParams.WRAP_CONTENT;
-                consumed = true;
-                Log.d("Peter", "Wrap");
+                return true;
             } else if (motionEvent.getAction() == MotionEvent.ACTION_MOVE) {
+                // When we're dragging the handle, update the size of contents.
+                updateContentsSize((int) motionEvent.getRawY());
 
-                int touchEndPos = (int) motionEvent.getRawY();
-                int diff = touchEndPos - mTouchStartPos;
-                mTouchStartPos = touchEndPos;
-                ViewGroup.LayoutParams viewParams = hello.getLayoutParams();
-                viewParams.height -= diff;
-                hello.setLayoutParams(viewParams);
-
-
-                consumed = true;
+                return true;
             }
 
-//            decorView.requestLayout();
-            getWindowManager().updateViewLayout(decorView, lp);
-//            decorView.requestLayout();
-
-            return consumed;
+            return false;
         });
     }
 
+    /**
+     * Looks at the given y, and updates the size of the "content" view by how much y has changed
+     * since the last call.
+     */
+    private void updateContentsSize(int y) {
+        int diff = y - mLastTouchPos;
+        mLastTouchPos = y;
+
+        // - Update the height of the contents by that much:
+        ViewGroup.LayoutParams viewParams = mContents.getLayoutParams();
+        viewParams.height -= diff;
+        mContents.setLayoutParams(viewParams);
+    }
 
     @Override
     public void onAttachedToWindow() {
         super.onAttachedToWindow();
+
+        // Copied this from Ted's example, I'm not quite sure if it does anything...
 
         View decorView = getWindow().getDecorView();
         WindowManager.LayoutParams lp = (WindowManager.LayoutParams) decorView.getLayoutParams();
